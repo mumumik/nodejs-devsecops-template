@@ -1,0 +1,94 @@
+name: Main Branch Security Scan (SAST Policy + SCA)
+
+# Full Veracode Policy Scan on every merge to main, plus a weekly scheduled
+# run so dependency-only drift (new CVEs in existing deps) still gets caught
+# even when nobody pushes code that week.
+#
+# This is heavier than the PR pipeline scan: it uploads a build artifact to
+# the Veracode Platform, runs a policy scan, and updates the application
+# profile's scan history/compliance status.
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '0 2 * * 1' # every Monday 02:00 UTC
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build artifact
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run unit tests
+        run: npm test
+
+      - name: Package artifact for Veracode
+        run: npm run build:package
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: veracode-artifact
+          path: artifact.zip
+          retention-days: 1
+
+  sast-policy-scan:
+    name: SAST - Veracode Policy Scan
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: veracode-artifact
+
+      - name: Veracode Upload and Scan
+        uses: veracode/veracode-uploadandscan-action@0.2.10
+        with:
+          appname: ${{ vars.VERACODE_APP_NAME }}
+          createprofile: false
+          filepath: 'artifact.zip'
+          version: 'GitHub Actions run ${{ github.run_id }}'
+          vid: ${{ secrets.VERACODE_API_ID }}
+          vkey: ${{ secrets.VERACODE_API_KEY }}
+          scantimeout: 30
+
+  sca-scan:
+    name: SCA - Veracode Agent-Based SCA
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run Veracode SCA
+        uses: veracode/veracode-sca@v2.1.15
+        env:
+          SRCCLR_API_TOKEN: ${{ secrets.VERACODE_AGENT_TOKEN }}
+        with:
+          create-issues: true
+          allow-dirty: true

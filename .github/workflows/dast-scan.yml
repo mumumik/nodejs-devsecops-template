@@ -1,0 +1,48 @@
+name: DAST Scan (Veracode DAST Essentials)
+
+# DAST needs a *running, deployed* target - it attacks a live URL, so this
+# does not run on every push. Trigger it manually after a deploy, or on a
+# schedule against a persistent staging environment.
+#
+# Prerequisite (one-time, done in the Veracode Platform UI, not here):
+#   1. Create a DAST Essentials scan target pointing at your staging/QA URL.
+#   2. Copy that target's webhook secret into the repo/org secret
+#      VERACODE_DAST_WEBHOOK_SECRET.
+#
+# WARNING: this performs real attack traffic against the target. Only ever
+# point it at an environment you own and are authorized to test (staging/QA),
+# never production, unless a scan window has been explicitly approved.
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_url:
+        description: 'Staging URL to confirm before scanning (informational only, target is pre-configured in Veracode)'
+        required: false
+        default: 'https://staging.example.com'
+  schedule:
+    - cron: '0 3 * * 3' # every Wednesday 03:00 UTC, adjust per team's staging cadence
+
+permissions:
+  contents: read
+
+jobs:
+  dast-scan:
+    name: DAST - Veracode DAST Essentials
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run Veracode DAST Essentials scan
+        uses: veracode/veracode-dast-essentials-action@v1
+        env:
+          VERACODE_DAST_WEBHOOK_SECRET: ${{ secrets.VERACODE_DAST_WEBHOOK_SECRET }}
+        with:
+          wait_for_scan_finish: true
+          report_filepath: 'results/dast-report.xml'
+
+      - name: Upload DAST report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dast-report
+          path: results/dast-report.xml
+          retention-days: 30

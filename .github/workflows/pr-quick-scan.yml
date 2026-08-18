@@ -1,0 +1,82 @@
+name: PR Quick Security Scan (SAST + SCA)
+
+# Fast feedback loop for pull requests.
+# - SAST: Veracode Pipeline Scan (no policy impact, does not require an
+#   application profile, results appear as a PR comment / GitHub annotation)
+# - SCA: Veracode Agent-Based SCA (srcclr) against package-lock.json
+#
+# These jobs are intentionally lightweight so they finish in a few minutes
+# and don't block fast-moving PRs. The full Policy Scan + DAST run on main
+# (see main-security-scan.yml).
+
+on:
+  pull_request:
+    branches: [main, develop]
+
+permissions:
+  contents: read
+  security-events: write
+  pull-requests: write
+
+jobs:
+  sast-pipeline-scan:
+    name: SAST - Veracode Pipeline Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Package source for scanning
+        run: zip -r artifact.zip src package.json package-lock.json
+
+      - name: Run Veracode Pipeline Scan
+        id: pipeline-scan
+        uses: veracode/veracode-pipeline-scan-action@v1.0.16
+        with:
+          vid: ${{ secrets.VERACODE_API_ID }}
+          vkey: ${{ secrets.VERACODE_API_KEY }}
+          file: artifact.zip
+          fail_build: true
+          summary_output: true
+          summary_output_file: results/pipeline-scan-summary.json
+          project_name: ${{ github.event.repository.name }}
+          project_uri: ${{ github.server_url }}/${{ github.repository }}
+          project_ref: ${{ github.head_ref }}
+
+      - name: Convert results to SARIF
+        if: always()
+        uses: veracode/veracode-pipeline-scan-results-to-sarif@v1.0.4
+        with:
+          pipeline-results-json: results/pipeline-scan-summary.json
+          source-base-path-1: "src:/"
+          output-results-sarif: results/veracode-results.sarif
+
+      - name: Upload SARIF to GitHub code scanning
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: results/veracode-results.sarif
+
+  sca-scan:
+    name: SCA - Veracode Agent-Based SCA
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run Veracode SCA
+        uses: veracode/veracode-sca@v2.1.15
+        env:
+          SRCCLR_API_TOKEN: ${{ secrets.VERACODE_AGENT_TOKEN }}
+        with:
+          create-issues: false
+          allow-dirty: true

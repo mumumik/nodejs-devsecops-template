@@ -1,0 +1,22 @@
+{
+  "name": "nodejs-devsecops-template",
+  "version": "1.0.0",
+  "description": "Node.js repository template with built-in Veracode SAST/SCA/DAST pipeline",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "test": "jest --coverage",
+    "lint": "eslint src test",
+    "build:package": "zip -r artifact.zip src package.json package-lock.json -x '*.test.js'"
+  },
+  "license": "UNLICENSED",
+  "private": true,
+  "dependencies": {
+    "express": "^4.19.2"
+  },
+  "devDependencies": {
+    "eslint": "^8.57.0",
+    "jest": "^29.7.0",
+    "supertest": "^6.3.4"
+  }
+}
