@@ -62,7 +62,7 @@ jobs:
         uses: veracode/veracode-uploadandscan-action@0.2.10
         with:
           appname: ${{ vars.VERACODE_APP_NAME }}
-          createprofile: false
+          createprofile: true
           filepath: 'artifact.zip'
           version: 'GitHub Actions run ${{ github.run_id }}'
           vid: ${{ secrets.VERACODE_API_ID }}
